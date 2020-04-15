@@ -102,8 +102,19 @@ crossProduct _ _ = Nothing
 
 determinant :: Matrix -> Scalar
 determinant ((a:b:[]) : (c:d:[]) : []) = (a * d) - (b * c)
-determinant ((a:b:c:[]):(d:e:f:[]):(g:h:i:[]):[]) =
-  (a * det [[e,f],[h,i]]) - (b * det [[d,f],[g,i]]) + (c * det [[d,e],[g,h]])
+determinant matrix =
+  altsum 1 $ headMinorProducts matrix
+  where
+    altsum _ [] = 0
+    altsum 1 (x:xs) = x + (altsum 0 xs)
+    altsum 0 (x:xs) = (-x) + (altsum 1 xs)
+    index matrix = map (indexify 0) matrix
+    indexify _ [] = []
+    indexify n (x:xs) = (n,x) : indexify (n+1) xs
+    deindex = map deindexify
+    deindexify xs = map (\(a,b) -> b) xs
+    getMinor matrix i = deindex $ map (filter (\(a,_) -> i /= a)) $ tail $ index matrix
+    headMinorProducts matrix = zipWith (*) (head matrix) (map (determinant . getMinor matrix) [0..((length matrix) - 1)])
 det = determinant
 
 norm :: Vector -> Scalar
@@ -113,10 +124,6 @@ magnitude = norm
 
 unitVector :: Vector -> Vector
 unitVector vector = map (/ (norm vector)) vector
-
--- projection :: Vector -> Vector -> Vector
--- projection direction vector =
-
 
 cosTheta :: Maybe Vector -> Maybe Vector -> Maybe Scalar
 cosTheta (Just v1) (Just v2) =
