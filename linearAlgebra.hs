@@ -18,6 +18,15 @@ module LinearAlgebra (
   , transpose
   , trace
   , display
+  , isRREF
+  , gjw
+  , gjWalk
+  , gjmatrix
+  , gjStep
+  -- , gjShowNumber
+  , zeroesAtBottom
+  , rowsLeadingOneToTheRight
+  , findLeadingOnes
 ) where
 
 import qualified Data.List as DL (transpose, intercalate)
@@ -143,3 +152,189 @@ set number =
     numberLeft = totalLength - (length shown)
   in
     (replicate numberLeft ' ') ++ shown
+
+
+
+-------------------------------
+--- Gauss Jordan Elimination
+-------------------------------
+
+-- rows
+-- cols
+data GJDTO = GJDTO {
+    gjMatrix :: Matrix
+  , gjRowIndex :: Int
+  , gjColIndex :: Int
+  , gjPivotRows :: [Int]
+} deriving (Show)
+
+r06 = [
+    [1,0,0,0,0]
+  , [0,0,2,0,0]
+  , [0,0,0,1,0]
+  ]
+
+dto = GJDTO {
+    gjMatrix = gjmatrix r06
+  , gjRowIndex = 0
+  , gjColIndex = 0
+  , gjPivotRows = [0]
+  }
+
+d0 = dto
+d1 = gjStep' d0
+d2 = gjStep' d1
+d3 = gjStep' d2
+d4 = gjStep' d3
+d5 = gjStep' d4
+d6 = gjStep' d5
+d7 = gjStep' d6
+d8 = gjStep' d7
+
+rowz = cols -- really dumb need to figure out inversions
+colz = rows
+
+gjStep' :: GJDTO -> GJDTO
+gjStep' dto =
+  let
+    totalRows = rowz $ gjMatrix dto
+    r         = gjRowIndex dto
+    c         = gjColIndex dto
+    pivots    = gjPivotRows dto
+    pivotCieling []     = 0
+    pivotCieling pivots = (maximum pivots) + 1
+    getNewRow dto       = if (r < (totalRows-1)) then r + 1 else pivotCieling pivots
+    getNewCol dto       = if (r < (totalRows-1)) then c else c + 1
+  in
+    GJDTO {
+        gjMatrix = gjMatrix dto
+      , gjRowIndex = getNewRow dto
+      , gjColIndex = getNewCol dto
+      , gjPivotRows = gjPivotRows dto
+    }
+
+gjStep :: Int -> Int -> [Int] -> (Int, Int) -> (Int, Int)
+gjStep rows cols pivots (c,r)
+  | r <  rows = (c, r+1)
+  | r >= rows = (c+1, pivotCieling pivots)
+  where
+    pivotCieling [] = 0
+    pivotCieling xs = (maximum xs) + 1
+
+gjmatrix :: [[Integer]] -> Matrix
+gjmatrix matrix =
+  (map . map) fromIntegral matrix
+
+gjw :: [[Integer]] -> (Int, Int, Component)
+gjw matrix = gjWalk (gjmatrix matrix) (0,0) []
+
+gjWalk :: Matrix -> (Int, Int) -> [Int] -> (Int, Int, Component)
+gjWalk matrix (c, r) ps =
+  let
+    n = matrix !! r !! c
+  in
+    case n of
+      0.0 -> gjWalk matrix (gjStep (rows matrix) (cols matrix) ps (c, r)) ps -- walk without new pivot
+      1.0 -> gjWalk matrix (gjStep (rows matrix) (cols matrix) ps (c, r)) (r:ps) -- walk with new pivot
+      _   -> (c, r, n)
+
+-- gjShowNumber :: Matrix -> (Int, Int) -> [Int] -> (Int, Int, Component, [Int])
+-- gjShowNumber matrix (c, r) ps =
+--   let
+--     (fc, fr) = gjStep (rows matrix) (cols matrix) ps (c, r)
+--     n = matrix !! fr !! fc
+--   in
+--     (fc, fr, n, [])
+
+-- nums = [(c,r) | c <- [0..3],  r <- [0..2]]
+-- showItBitch = map (\c -> (c, gjStep 2 3 c)) nums
+
+type GJMatrix = [[Integer]]
+
+gj01 = [
+    [4,0,-1]
+  , [2,-2,3]
+  , [7,5,0]
+  ]
+
+gj02 = [[1],[2],[3],[4],[5],[6],[7]]
+
+gjswap :: GJMatrix -> Int -> Int -> GJMatrix
+gjswap matrix aindex bindex
+  | aindex == bindex = matrix
+  | aindex > (length matrix) - 1 || aindex < 0 = matrix
+  | bindex > (length matrix) - 1 || bindex < 0 = matrix
+  | otherwise = start ++ [matrix !! b] ++ middle ++ [matrix !! a] ++ end
+    where
+      a = min aindex bindex
+      b = max aindex bindex
+      start = take a matrix
+      middle = drop (a + 1) $ take b matrix
+      end = drop (b + 1) matrix
+
+gjmult :: GJMatrix -> Int -> Integer -> GJMatrix
+gjmult matrix rowIndex scalar =
+  start ++ [new] ++ end
+  where
+    start = take rowIndex matrix
+    end = drop (rowIndex + 1) matrix
+    new = map (* scalar) $ matrix !! rowIndex
+
+gjadd :: GJMatrix -> Int -> Int -> Integer -> GJMatrix
+gjadd matrix originalIndex targetIndex scalar =
+  start ++ [new] ++ end
+  where
+    start = take targetIndex matrix
+    end = drop (targetIndex + 1) matrix
+    addend = map (* scalar) $ matrix !! originalIndex
+    new = zipWith (+) addend (matrix !! targetIndex)
+
+
+-- http://mathonline.wikidot.com/reduced-row-echelon-form-of-a-matrix-rref
+
+isRREF :: GJMatrix -> Bool
+isRREF matrix =
+  zeroesAtBottom matrix &&
+  rowsHaveLeadingOnes matrix &&
+  rowsLeadingOneToTheRight matrix &&
+  colsHaveLeadingOnes matrix
+
+-- REF
+
+zeroesAtBottom :: GJMatrix -> Bool
+zeroesAtBottom matrix =
+  extractedZeroes == endOfMatrix
+  where
+    extractedZeroes = filter allZeroes matrix
+    allZeroes row = row == replicate (length row) 0
+    endOfMatrix = take (length extractedZeroes) $ reverse matrix
+
+rowsLeadingOneToTheRight :: GJMatrix -> Bool
+rowsLeadingOneToTheRight matrix = rrWalk (head leads) (tail leads)
+  where
+    leads = findLeadingOnes matrix
+rrWalk _ [] = True
+rrWalk (a,b) ((c,d):xs)
+  | a < c && b < d = rrWalk (c,d) xs
+  | otherwise = False
+
+-- RREF
+
+rowsHaveLeadingOnes :: GJMatrix -> Bool
+-- I think this is implied in findLeadingOnes
+rowsHaveLeadingOnes matrix = True
+
+colsHaveLeadingOnes :: GJMatrix -> Bool
+-- I think this is implied in findLeadingOnes
+colsHaveLeadingOnes matrix = True
+
+findLeadingOnes :: GJMatrix -> [(Int, Int)]
+findLeadingOnes matrix = leadingOnesMatrix matrix 0
+leadingOnesMatrix [] _ = []
+leadingOnesMatrix (r:rs) n =
+  leadingOnes r 0 n ++ leadingOnesMatrix rs (n+1)
+leadingOnes [] _ _ = []
+leadingOnes (x:xs) n r
+  | x == 0 = leadingOnes xs (n+1) r
+  | x == 1 = [(r,n)]
+  | otherwise = []
