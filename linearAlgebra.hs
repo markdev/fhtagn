@@ -19,7 +19,7 @@ module LinearAlgebra (
   , trace
   , display
   , isRREF
-  , gjw
+  -- , gjw
   , gjWalk
   , gjmatrix
   , gjStep
@@ -161,12 +161,6 @@ set number =
 
 -- rows
 -- cols
-data GJDTO = GJDTO {
-    gjMatrix :: Matrix
-  , gjRowIndex :: Int
-  , gjColIndex :: Int
-  , gjPivotRows :: [Int]
-} deriving (Show)
 
 r06 = [
     [1,0,0,0,0]
@@ -178,24 +172,39 @@ dto = GJDTO {
     gjMatrix = gjmatrix r06
   , gjRowIndex = 0
   , gjColIndex = 0
-  , gjPivotRows = [0]
+  , gjPivotRows = []
   }
-
-d0 = dto
-d1 = gjStep' d0
-d2 = gjStep' d1
-d3 = gjStep' d2
-d4 = gjStep' d3
-d5 = gjStep' d4
-d6 = gjStep' d5
-d7 = gjStep' d6
-d8 = gjStep' d7
 
 rowz = cols -- really dumb need to figure out inversions
 colz = rows
 
-gjStep' :: GJDTO -> GJDTO
-gjStep' dto =
+data GJDTO = GJDTO {
+    gjMatrix :: Matrix
+  , gjRowIndex :: Int
+  , gjColIndex :: Int
+  , gjPivotRows :: [Int]
+} deriving (Show)
+
+gjWalk :: [GJDTO] -> [GJDTO]
+gjWalk dtos =
+  let
+    dto = last dtos
+    r = gjRowIndex dto
+    c = gjColIndex dto
+    n = (gjMatrix dto) !! r !! c
+    ps = if (n == 1.0) then gjPivotRows dto ++ [r] else gjPivotRows dto
+    newDTO = GJDTO {
+        gjMatrix = gjMatrix dto
+      , gjRowIndex = gjRowIndex $ gjStep dto
+      , gjColIndex = gjColIndex $ gjStep dto
+      , gjPivotRows = ps
+    }
+    res = if (n > 1) then [] else gjWalk [newDTO]
+  in
+    dto:res
+
+gjStep :: GJDTO -> GJDTO
+gjStep dto =
   let
     totalRows = rowz $ gjMatrix dto
     r         = gjRowIndex dto
@@ -205,6 +214,7 @@ gjStep' dto =
     pivotCieling pivots = (maximum pivots) + 1
     getNewRow dto       = if (r < (totalRows-1)) then r + 1 else pivotCieling pivots
     getNewCol dto       = if (r < (totalRows-1)) then c else c + 1
+    -- getNewPivots        = if -- get n then get the pivots
   in
     GJDTO {
         gjMatrix = gjMatrix dto
@@ -213,30 +223,14 @@ gjStep' dto =
       , gjPivotRows = gjPivotRows dto
     }
 
-gjStep :: Int -> Int -> [Int] -> (Int, Int) -> (Int, Int)
-gjStep rows cols pivots (c,r)
-  | r <  rows = (c, r+1)
-  | r >= rows = (c+1, pivotCieling pivots)
-  where
-    pivotCieling [] = 0
-    pivotCieling xs = (maximum xs) + 1
-
 gjmatrix :: [[Integer]] -> Matrix
 gjmatrix matrix =
   (map . map) fromIntegral matrix
 
-gjw :: [[Integer]] -> (Int, Int, Component)
-gjw matrix = gjWalk (gjmatrix matrix) (0,0) []
+-- gjw :: [[Integer]] -> (Int, Int, Component)
+-- gjw matrix = gjWalk (gjmatrix matrix) (0,0) []
 
-gjWalk :: Matrix -> (Int, Int) -> [Int] -> (Int, Int, Component)
-gjWalk matrix (c, r) ps =
-  let
-    n = matrix !! r !! c
-  in
-    case n of
-      0.0 -> gjWalk matrix (gjStep (rows matrix) (cols matrix) ps (c, r)) ps -- walk without new pivot
-      1.0 -> gjWalk matrix (gjStep (rows matrix) (cols matrix) ps (c, r)) (r:ps) -- walk with new pivot
-      _   -> (c, r, n)
+
 
 -- gjShowNumber :: Matrix -> (Int, Int) -> [Int] -> (Int, Int, Component, [Int])
 -- gjShowNumber matrix (c, r) ps =
