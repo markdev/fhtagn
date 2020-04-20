@@ -21,8 +21,8 @@ module LinearAlgebra (
   , isRREF
   -- , gjw
   , gjWalk
-  , gjmatrix
-  , gjStep
+  -- , gjmatrix
+  -- , gjStep
   -- , gjShowNumber
   , zeroesAtBottom
   , rowsLeadingOneToTheRight
@@ -31,6 +31,7 @@ module LinearAlgebra (
 
 import qualified Data.List as DL (transpose, intercalate)
 import qualified Data.String as DL (unlines)
+import Data.Ratio
 
 type Scalar = Double
 type Component = Double
@@ -153,6 +154,21 @@ set number =
   in
     (replicate numberLeft ' ') ++ shown
 
+r = rMatrix [[1.0, 2.5], [1.5, 3.0]]
+
+
+
+displayR :: RMatrix -> IO ()
+displayR rMatrix =
+  putStrLn $ unlines $ map (DL.intercalate " ") $ (map . map) setR $ rMatrix
+  where
+    setR num = (replicate (6 - (length $ raw num)) ' ') ++ (raw num)
+    raw num =
+      if denominator num == 1
+        then show (numerator num)
+        else show (numerator num) ++ "/" ++ show (denominator num)
+
+
 
 
 -------------------------------
@@ -162,96 +178,185 @@ set number =
 -- rows
 -- cols
 
-r06 = [
+r00 = [
+    [0,1]
+  , [1,0]
+  ]
+
+r01 = [
+    [1,1]
+  , [0,0]
+  ]
+
+r02 = [
+    [1,1,0]
+  , [0,1,0]
+  , [0,1,0]
+  ]
+
+r03 = [
+    [1,1,0]
+  , [0,2,0]
+  , [0,1,0]
+  ]
+
+r04 = [
+    [1,1,0]
+  , [0,1,0]
+  , [0,0,2]
+  ]
+
+r05 = [
     [1,0,0,0,0]
   , [0,0,2,0,0]
   , [0,0,0,1,0]
   ]
 
-dto = GJDTO {
-    gjMatrix = gjmatrix r06
-  , gjRowIndex = 0
-  , gjColIndex = 0
-  , gjPivotRows = []
-  }
+r06 = [
+    [2,3]
+  , [4,1]
+  ]
 
-rowz = cols -- really dumb need to figure out inversions
-colz = rows
+type RMatrix = [[Rational]]
 
-data GJDTO = GJDTO {
-    gjMatrix :: Matrix
-  , gjRowIndex :: Int
-  , gjColIndex :: Int
-  , gjPivotRows :: [Int]
+data RGJDTO = RGJDTO {
+    rgjMatrix :: RMatrix
+  , rgjRowIndex :: Int
+  , rgjColIndex :: Int
+  , rgjPivotRows :: [Int]
 } deriving (Show)
 
-gjWalk :: [GJDTO] -> [GJDTO]
+rDto :: RMatrix -> RGJDTO
+rDto rmatrix = RGJDTO {
+    rgjMatrix = rmatrix
+  , rgjRowIndex = 0
+  , rgjColIndex = 0
+  , rgjPivotRows = []
+  }
+
+rcolz :: RMatrix -> Int
+rcolz matrix = length $ matrix !! 0
+
+rrowz :: RMatrix -> Int
+rrowz matrix = length matrix
+
+rMatrix matrix = (map . map) toRational matrix
+
+belowPivot dto = (rgjColIndex dto) `elem` (rgjPivotRows dto)
+knockoutWithAdd dto = dto
+
+rgjmatrix :: [[Integer]] -> RMatrix
+rgjmatrix matrix =
+  (map . map) toRational matrix
+
+gjSolve :: RMatrix -> RMatrix
+gjSolve rMatrix =
+  let
+    currentDTO = last $ gjWalkHist rMatrix
+    matrix    = rgjMatrix currentDTO
+    rowIndex  = rgjRowIndex currentDTO
+    colIndex  = rgjColIndex currentDTO
+    pivotRows = rgjPivotRows currentDTO
+    scalar = 1.0 / (matrix !! colIndex !! rowIndex)
+    ---
+    original = firstNonZeroIndex matrix colIndex
+    target = rowIndex
+    firstNonZeroIndex matrix colIndex = (firstNonZeroRow matrix colIndex) - 1
+    firstNonZeroRow [] _ = 0 -- this needs to be corrected
+    firstNonZeroRow (r:rs) colIndex =
+      if r !! colIndex == 0.0
+        then 1 + (firstNonZeroRow rs colIndex)
+        else 1
+
+    addScalar = (- 4.0)
+  in
+    if (colIndex `elem` pivotRows)
+      then gjadd matrix original target addScalar
+      else gjmult matrix rowIndex scalar
+
+r2 = RGJDTO {
+  rgjMatrix = [[1 % 1,3 % 2],[0 % 1,(-5) % 1]],
+  rgjRowIndex = 1,
+  rgjColIndex = 0,
+  rgjPivotRows = [0]
+  }
+
+gjWalkHist :: RMatrix -> [RGJDTO]
+gjWalkHist rMatrix = gjWalkHist' $ gjMakeDto rMatrix
+
+gjWalkHist' :: RGJDTO -> [RGJDTO]
+gjWalkHist' dto =
+  dto : if (gjEndDto dto)
+    then []
+    else gjWalkHist' $ gjNextDto dto
+
+gjMakeDto :: RMatrix -> RGJDTO
+gjMakeDto rMatrix = RGJDTO {
+  rgjMatrix = rMatrix,
+  rgjRowIndex = 0,
+  rgjColIndex = 0,
+  rgjPivotRows = []
+}
+
+gjNextDto :: RGJDTO -> RGJDTO
+gjNextDto dto =
+  let
+    r       = rgjRowIndex dto
+    c       = rgjColIndex dto
+    n       = gjGetValue dto
+    ps      = if (n == 1.0) then pivots ++ [r] else pivots
+    tr      = rrowz $ rgjMatrix dto
+    pivots  = rgjPivotRows dto
+    pivotCieling []     = 0
+    pivotCieling pivots = (maximum pivots) + 1
+  in RGJDTO {
+      rgjMatrix = rgjMatrix dto
+    , rgjRowIndex = if (r < (tr-1)) then r + 1 else pivotCieling pivots
+    , rgjColIndex = if (r < (tr-1)) then c else c + 1
+    , rgjPivotRows = ps
+  }
+
+gjGetValue :: RGJDTO -> Rational
+gjGetValue dto =
+  (rgjMatrix dto) !! (rgjRowIndex dto) !! (rgjColIndex dto)
+
+gjEndDto :: RGJDTO -> Bool
+gjEndDto dto =
+  let
+    n = gjGetValue dto
+    outOfBounds =
+      rgjRowIndex dto >= (rrowz $ rgjMatrix dto) &&
+      rgjColIndex dto >= (rcolz $ rgjMatrix dto)
+    letsMakeItAPivot =
+      n /= 1.0 && n /= 0.0
+  in outOfBounds || letsMakeItAPivot
+
+gjWalk :: [RGJDTO] -> [RGJDTO]
 gjWalk dtos =
   let
-    dto = last dtos
-    r = gjRowIndex dto
-    c = gjColIndex dto
-    n = (gjMatrix dto) !! r !! c
-    ps = if (n == 1.0) then gjPivotRows dto ++ [r] else gjPivotRows dto
-    newDTO = GJDTO {
-        gjMatrix = gjMatrix dto
-      , gjRowIndex = gjRowIndex $ gjStep dto
-      , gjColIndex = gjColIndex $ gjStep dto
-      , gjPivotRows = ps
+    dto     = last dtos
+    r       = rgjRowIndex dto
+    c       = rgjColIndex dto
+    n       = (rgjMatrix dto) !! r !! c
+    ps      = if (n == 1.0) then pivots ++ [r] else pivots
+    tr      = rrowz $ rgjMatrix dto
+    tc      = rcolz $ rgjMatrix dto
+    pivots  = rgjPivotRows dto
+    pivotCieling []     = 0
+    pivotCieling pivots = (maximum pivots) + 1
+    newDTO  = RGJDTO {
+        rgjMatrix = rgjMatrix dto
+      , rgjRowIndex = if (r < (tr-1)) then r + 1 else pivotCieling pivots
+      , rgjColIndex = if (r < (tr-1)) then c else c + 1
+      , rgjPivotRows = ps
     }
-    res = if (n > 1) then [] else gjWalk [newDTO]
+    atEnd = r >= tr && c >= tc
+    res = if (n /= 1 || atEnd) then [] else gjWalk [newDTO]
+    -- res = gjWalk [newDTO]
   in
     dto:res
 
-gjStep :: GJDTO -> GJDTO
-gjStep dto =
-  let
-    totalRows = rowz $ gjMatrix dto
-    r         = gjRowIndex dto
-    c         = gjColIndex dto
-    pivots    = gjPivotRows dto
-    pivotCieling []     = 0
-    pivotCieling pivots = (maximum pivots) + 1
-    getNewRow dto       = if (r < (totalRows-1)) then r + 1 else pivotCieling pivots
-    getNewCol dto       = if (r < (totalRows-1)) then c else c + 1
-    -- getNewPivots        = if -- get n then get the pivots
-  in
-    GJDTO {
-        gjMatrix = gjMatrix dto
-      , gjRowIndex = getNewRow dto
-      , gjColIndex = getNewCol dto
-      , gjPivotRows = gjPivotRows dto
-    }
-
-gjmatrix :: [[Integer]] -> Matrix
-gjmatrix matrix =
-  (map . map) fromIntegral matrix
-
--- gjw :: [[Integer]] -> (Int, Int, Component)
--- gjw matrix = gjWalk (gjmatrix matrix) (0,0) []
-
-
-
--- gjShowNumber :: Matrix -> (Int, Int) -> [Int] -> (Int, Int, Component, [Int])
--- gjShowNumber matrix (c, r) ps =
---   let
---     (fc, fr) = gjStep (rows matrix) (cols matrix) ps (c, r)
---     n = matrix !! fr !! fc
---   in
---     (fc, fr, n, [])
-
--- nums = [(c,r) | c <- [0..3],  r <- [0..2]]
--- showItBitch = map (\c -> (c, gjStep 2 3 c)) nums
-
 type GJMatrix = [[Integer]]
-
-gj01 = [
-    [4,0,-1]
-  , [2,-2,3]
-  , [7,5,0]
-  ]
-
-gj02 = [[1],[2],[3],[4],[5],[6],[7]]
 
 gjswap :: GJMatrix -> Int -> Int -> GJMatrix
 gjswap matrix aindex bindex
@@ -266,15 +371,16 @@ gjswap matrix aindex bindex
       middle = drop (a + 1) $ take b matrix
       end = drop (b + 1) matrix
 
-gjmult :: GJMatrix -> Int -> Integer -> GJMatrix
-gjmult matrix rowIndex scalar =
+gjmult :: Num b => [[b]] -> Int -> b -> [[b]]
+gjmult rmatrix rowIndex scalar =
   start ++ [new] ++ end
   where
-    start = take rowIndex matrix
-    end = drop (rowIndex + 1) matrix
-    new = map (* scalar) $ matrix !! rowIndex
+    start = take rowIndex rmatrix
+    new = map (* scalar) $ rmatrix !! rowIndex
+    end = drop (rowIndex + 1) rmatrix
 
-gjadd :: GJMatrix -> Int -> Int -> Integer -> GJMatrix
+--gjadd :: GJMatrix -> Int -> Int -> Integer -> GJMatrix
+gjadd :: Num b => [[b]] -> Int -> Int -> b -> [[b]]
 gjadd matrix originalIndex targetIndex scalar =
   start ++ [new] ++ end
   where
@@ -332,3 +438,19 @@ leadingOnes (x:xs) n r
   | x == 0 = leadingOnes xs (n+1) r
   | x == 1 = [(r,n)]
   | otherwise = []
+
+
+-------------------
+
+-- Ratio shitposting
+
+type Thingy = Ratio
+newRational = toRational 3.14
+nr1 = toRational 3
+
+type GJMatrix' = [[Rational]]
+rr05 = [
+    [1,0,0,0,0]
+  , [0,0,2,0,0]
+  , [0,0,0,1,0]
+  ]
